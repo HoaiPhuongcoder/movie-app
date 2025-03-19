@@ -1,7 +1,9 @@
-import React, { useEffect } from "react";
+import { useState, useEffect } from "react";
 import Search from "./components/Search";
-import { useState } from "react";
 import Spinner from "./components/Spinner";
+import MovieCard from "./components/MovieCard";
+import { useDebounce } from "react-use";
+import { updateSearchCount } from "./appwrite.js";
 
 const API_BASE_URL = "https://api.themoviedb.org/3";
 const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
@@ -10,7 +12,6 @@ const API_OPTIONS = {
   method: "GET",
   headers: {
     accept: "application/json",
-    // Authorization: `Bearer ${API_KEY}`,
     Authorization: `Bearer ${API_KEY}`,
   },
 };
@@ -20,35 +21,45 @@ const App = () => {
   const [movieList, setMovieList] = useState([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const fetchMovies = async () => {
+  const [debouncedSearchItem, setDebouncedSearchItem] = useState("");
+  useDebounce(() => setDebouncedSearchItem(searchTerm), 500, [searchTerm]);
+  const fetchMovies = async (query = "") => {
     setIsLoading(true);
     setErrorMessage("");
     try {
-      // const endpoint = `${API_BASE_URL}/discover/movie?sort_by=popularity.desc`;
-      const endpoint = `${API_BASE_URL}/discover/movie?sort_by=popularity.desc`;
+      const endpoint = query
+        ? `${API_BASE_URL}/search/movie?query=${encodeURIComponent(query)}`
+        : `${API_BASE_URL}/discover/movie?sort_by=popularity.desc`;
+
       const response = await fetch(endpoint, API_OPTIONS);
+
       if (!response.ok) {
-        throw new Error("Failed to fetch movie");
+        throw new Error("Failed to fetch movies");
       }
+
       const data = await response.json();
-      console.log(data);
+
       if (data.Response === "False") {
-        setErrorMessage(data.Error || "FAil to fetch movie");
+        setErrorMessage(data.Error || "Failed to fetch movies");
         setMovieList([]);
         return;
       }
+
       setMovieList(data.results || []);
+      if (query && data.results.length > 0) {
+        await updateSearchCount(query, data.results[0]);
+      }
     } catch (error) {
-      console.error(`Error Fetching Movie: ${error} `);
-      setErrorMessage(`Error Fetching Movie, Please Try Again Later`);
+      console.error(`Error fetching movies: ${error}`);
+      setErrorMessage("Error fetching movies. Please try again later.");
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchMovies();
-  }, []);
+    fetchMovies(debouncedSearchItem);
+  }, [debouncedSearchItem]);
 
   return (
     <main>
@@ -62,7 +73,7 @@ const App = () => {
           </h1>
           <Search searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
         </header>
-        <section className="all-movie">
+        <section className="all-movies">
           <h2 className="mt-[40px]">All Movie</h2>
           {isLoading ? (
             <Spinner />
@@ -71,9 +82,7 @@ const App = () => {
           ) : (
             <ul>
               {movieList.map((movie) => (
-                <p key={movie.id} className="text-white">
-                  {movie.title}
-                </p>
+                <MovieCard key={movie.id} movie={movie} />
               ))}
             </ul>
           )}
